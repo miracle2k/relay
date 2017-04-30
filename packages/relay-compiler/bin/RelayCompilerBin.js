@@ -91,6 +91,7 @@ async function run(options: {
   schema: string,
   src: string,
   extensions: Array<string>,
+  transform: Array<string>,
   include: Array<string>,
   exclude: Array<string>,
   verbose: boolean,
@@ -132,7 +133,7 @@ Ensure that one such file exists in ${srcDir} or its parents.
     default: {
       baseDir: srcDir,
       getFileFilter: RelayJSModuleParser.getFileFilter,
-      getParser: RelayJSModuleParser.getParser,
+      getParser: RelayJSModuleParser.getParser(options.transform),
       getSchema: () => getSchema(schemaPath),
       watchmanExpression: useWatchman ? buildWatchExpression(options) : null,
       filepaths: useWatchman ? null : getFilepathsFromGlob(srcDir, options),
@@ -268,6 +269,11 @@ const argv = yargs
       array: true,
       default: ['js'],
       describe: 'File extensions to compile (--extensions js jsx)',
+      type: 'string',
+    },
+    'transform': {
+      array: true,
+      describe: 'Use a transform module on top-level files',
       type: 'string',
     },
     verbose: {

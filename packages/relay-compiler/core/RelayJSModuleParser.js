@@ -27,9 +27,7 @@ import type {File, FileFilter} from '../graphql-compiler/GraphQLCompilerPublic';
 import type {DocumentNode} from 'graphql';
 
 // Throws an error if parsing the file fails
-function parseFile(baseDir: string, file: File): ?DocumentNode {
-  const text = fs.readFileSync(path.join(baseDir, file.relPath), 'utf8');
-
+function parseFile(baseDir: string, file: File, text: string): ?DocumentNode {
   invariant(
     text.indexOf('graphql') >= 0,
     'RelayJSModuleParser: Files should be filtered before passed to the ' +
@@ -76,11 +74,47 @@ function parseFile(baseDir: string, file: File): ?DocumentNode {
   };
 }
 
-function getParser(baseDir: string): ASTCache {
-  return new ASTCache({
-    baseDir,
-    parse: parseFile,
-  });
+type TransformFactory = (baseDir: string) => (filename: string, text: string) => string;
+type TransformModule = { default: TransformFactory };
+
+function getParser(transformModules: Array<string> = []) { 
+  return (baseDir: string): ASTCache => {
+    const transformer = getTransformer(baseDir, transformModules)
+    return new ASTCache({
+      baseDir,
+      parse: (baseDir: string, file: File) => {
+        const filename = path.join(baseDir, file.relPath);
+        const text = fs.readFileSync(filename, 'utf8');
+        return parseFile(baseDir, file, transformer(filename, text))
+      },
+    });
+  }
+}
+
+function getTransformer(baseDir: string, transformModules: Array<string> = []) {
+  let transformer = (filename: string, text: string) => text 
+  if (transformModules.length) {
+    transformModules.forEach(moduleName => {
+      let moduleImpl: TransformFactory
+      try {
+        // $FlowFixMe flow doesn't know about __non_webpack_require__
+        moduleImpl = (__non_webpack_require__(moduleName): TransformFactory)
+        invariant(
+          moduleImpl.default,
+          'Transformer module "' + moduleName + '" should have a default export'
+        );
+      } catch (e) {
+        throw new Error(
+          'Can not resolve transformer module "' + moduleName + '"' 
+        );
+      }
+      const transformerImpl = moduleImpl.default(baseDir)
+      const prevTransformer = transformer
+      transformer = (filename: string, text: string) => transformerImpl(filename, prevTransformer(filename, text))
+    })
+  }
+
+  return transformer
 }
 
 function getFileFilter(baseDir: string): FileFilter {
